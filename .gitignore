@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+.Spotlight-V100
+.Trashes
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local config (if users create their own)
+local_config.py
+config.local.py
+*_local.py
+*.local.*
+
+# User-specific configuration (sensitive data)
+# DO NOT commit files with real credentials
+*_credentials.py
+credentials.json
+secrets.json
+.env
+.env.local
+.env.*.local
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Test files (if users create them)
+test_local.py
+scratch.py
+debug.py
+
+# Windows specific
+*.lnk
+$RECYCLE.BIN/
+
+# Jupyter Notebook checkpoints (if users experiment)
+.ipynb_checkpoints/
+
+# MacOS
+._*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Claude Code session files
+.claude/

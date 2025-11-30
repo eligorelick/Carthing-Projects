@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Portfolio Tracker</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: sans-serif; background: #0a0a0a; color: #e8e8e8; width: 800px; height: 480px; overflow: hidden; padding-right: 40px; }
+        .container { display: flex; flex-direction: column; height: 100%; }
+        .tabs { display: flex; background: #141414; border-bottom: 1px solid #2a2a2a; }
+        .tab { flex: 1; padding: 15px; text-align: center; font-size: 19px; color: #888; cursor: pointer; }
+        .tab.active { color: #3b82f6; border-bottom: 2px solid #3b82f6; }
+        .content { flex: 1; padding: 20px; overflow: hidden; display: flex; flex-direction: column; }
+        .row { display: grid; grid-template-columns: 90px 1fr 1fr 1fr; gap: 10px; padding: 12px 0; border-bottom: 1px solid #2a2a2a; font-size: 17px; }
+        .row.header { color: #888; font-size: 14px; }
+        .symbol { color: #3b82f6; font-weight: bold; }
+        .shares { font-size: 12px; color: #888; }
+        .right { text-align: right; }
+        .pos { color: #22c55e; }
+        .neg { color: #ef4444; }
+        .footer { padding: 10px 20px; background: #141414; border-top: 1px solid #2a2a2a; display: flex; justify-content: space-between; font-size: 12px; color: #888; }
+        .debug { position: fixed; top: 5px; right: 5px; background: #333; padding: 5px 10px; font-size: 11px; border-radius: 4px; z-index: 100; }
+        .error { color: #ef4444; padding: 20px; text-align: center; }
+        .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-shrink: 0; }
+        .total { font-size: 29px; font-weight: bold; }
+        .change { font-size: 19px; }
+        .dots { display: flex; justify-content: center; gap: 8px; padding: 8px 0; flex-shrink: 0; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; background: #2a2a2a; }
+        .dot.active { background: #3b82f6; }
+        .portfolio-page { display: none; flex: 1; overflow: hidden; }
+        .portfolio-page.active { display: flex; flex-direction: column; }
+        .holdings-list { flex: 1; overflow-y: auto; }
+        .chart-container { flex: 1; position: relative; }
+        .chart-header { text-align: center; padding: 10px 0; }
+        .chart-header .val { font-size: 34px; font-weight: bold; }
+        .chart-header .pct { font-size: 19px; }
+        /* Market status banner */
+        .market-status { text-align: center; padding: 6px; font-size: 13px; font-weight: bold; }
+        .market-status.closed { background: #7f1d1d; color: #fca5a5; }
+        .market-status.open { background: #14532d; color: #86efac; }
+        body.light .market-status.closed { background: #fecaca; color: #991b1b; }
+        body.light .market-status.open { background: #bbf7d0; color: #166534; }
+        /* Theme toggle button */
+        .theme-btn { background: #2a2a2a; border: 1px solid #3a3a3a; color: #888; padding: 4px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; margin-right: 15px; }
+        /* Light mode styles */
+        body.light { background: #f5f5f5; color: #1a1a1a; }
+        body.light .container { background: #f5f5f5; }
+        body.light .tabs { background: #e8e8e8; border-color: #ccc; }
+        body.light .tab { color: #666; }
+        body.light .tab.active { color: #3b82f6; }
+        body.light .content { background: #f5f5f5; }
+        body.light .row { border-color: #ddd; }
+        body.light .row.header { color: #666; }
+        body.light .shares { color: #666; }
+        body.light .footer { background: #e8e8e8; border-color: #ccc; color: #666; }
+        body.light .debug { background: #ddd; color: #333; }
+        body.light .dot { background: #ccc; }
+        body.light .header-row { color: #1a1a1a; }
+        body.light .theme-btn { background: #ddd; border-color: #ccc; color: #333; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="market-status closed" id="marketStatus">Market Closed</div>
+        <div class="tabs">
+            <div class="tab active" id="tab1" onclick="setPage(0)">Holdings [1]</div>
+            <div class="tab" id="tab2" onclick="setPage(1)">Chart [2/3]</div>
+        </div>
+        <div class="content">
+            <div class="header-row">
+                <div class="total" id="totalValue">--</div>
+                <div class="change" id="dayChange">--</div>
+            </div>
+            <div class="dots">
+                <div class="dot active" id="dot0"></div>
+                <div class="dot" id="dot1"></div>
+            </div>
+            <div class="portfolio-page active" id="page0">
+                <div class="holdings-list" id="holdingsList">Loading...</div>
+            </div>
+            <div class="portfolio-page" id="page1">
+                <div class="chart-header">
+                    <div class="val" id="chartGain">--</div>
+                    <div class="pct" id="chartPct">--</div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="dayChart" width="700" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            <div style="display:flex;align-items:center;"><button class="theme-btn" id="themeBtn" onclick="toggleTheme()">Light</button><span id="status">Starting...</span></div>
+            <div id="clock">--:--:--</div>
+            <div id="update">--</div>
+        </div>
+    </div>
+    <div class="debug" id="debug">Ready</div>
+
+    <script>
+        // Configure your server address here
+        var SERVER = 'http://172.16.42.1:8080';
+
+        var currentPage = 0;
+        var chartData = null;
+        var isLightMode = localStorage.getItem('theme') === 'light';
+
+        // Theme toggle
+        function toggleTheme() {
+            isLightMode = !isLightMode;
+            document.body.className = isLightMode ? 'light' : '';
+            document.getElementById('themeBtn').textContent = isLightMode ? 'Dark' : 'Light';
+            localStorage.setItem('theme', isLightMode ? 'light' : 'dark');
+            if (chartData && currentPage === 1) {
+                renderChart(chartData);
+            }
+        }
+
+        // Apply saved theme on load
+        if (isLightMode) {
+            document.body.className = 'light';
+            document.getElementById('themeBtn').textContent = 'Dark';
+        }
+
+        function log(msg) {
+            document.getElementById('debug').textContent = msg;
+            document.getElementById('status').textContent = msg;
+        }
+
+        function setPage(p) {
+            currentPage = p;
+            document.getElementById('tab1').className = p === 0 ? 'tab active' : 'tab';
+            document.getElementById('tab2').className = p === 1 ? 'tab active' : 'tab';
+            document.getElementById('page0').className = p === 0 ? 'portfolio-page active' : 'portfolio-page';
+            document.getElementById('page1').className = p === 1 ? 'portfolio-page active' : 'portfolio-page';
+            document.getElementById('dot0').className = p === 0 ? 'dot active' : 'dot';
+            document.getElementById('dot1').className = p === 1 ? 'dot active' : 'dot';
+            log('Page: ' + (p === 0 ? 'Holdings' : 'Chart'));
+            if (p === 1 && chartData) {
+                renderChart(chartData);
+            }
+        }
+
+        document.addEventListener('keydown', function(e) {
+            log('Key: ' + e.key);
+            if (e.key === '1') setPage(0);
+            if (e.key === '2' || e.key === '3') setPage(1);
+        });
+
+        var wheelScrubIndex = -1;
+        var wheelScrubTimeout = null;
+        var lastWheelTime = 0;
+        var wheelDirection = 0;
+        document.addEventListener('wheel', function(e) {
+            // Use deltaY primarily, fall back to deltaX
+            var delta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
+
+            // Normalize to -1 or 1 to avoid sensitivity issues
+            var direction = delta > 0 ? 1 : -1;
+
+            // Debounce rapid events (must be 50ms apart)
+            var now = Date.now();
+            if (now - lastWheelTime < 50) return;
+            lastWheelTime = now;
+
+            if (currentPage === 0) {
+                // Holdings list scroll
+                var list = document.getElementById('holdingsList');
+                list.scrollTop += direction * 50;
+            } else if (currentPage === 1 && chartState.values.length > 0) {
+                // Chart scrub
+                if (wheelScrubIndex < 0) wheelScrubIndex = 0;
+
+                wheelScrubIndex += direction;
+                wheelScrubIndex = Math.max(0, Math.min(chartState.values.length - 1, wheelScrubIndex));
+
+                drawChart(wheelScrubIndex);
+
+                // Clear scrub after 3 seconds of no wheel activity
+                clearTimeout(wheelScrubTimeout);
+                wheelScrubTimeout = setTimeout(function() {
+                    wheelScrubIndex = -1;
+                    drawChart();
+                }, 3000);
+            }
+        });
+
+        // US Market holidays 2024-2025 (month is 0-indexed)
+        var marketHolidays = [
+            '2024-01-01', '2024-01-15', '2024-02-19', '2024-03-29', '2024-05-27',
+            '2024-06-19', '2024-07-04', '2024-09-02', '2024-11-28', '2024-12-25',
+            '2025-01-01', '2025-01-20', '2025-02-17', '2025-04-18', '2025-05-26',
+            '2025-06-19', '2025-07-04', '2025-09-01', '2025-11-27', '2025-12-25'
+        ];
+
+        function isMarketOpen() {
+            var now = new Date();
+
+            // Convert to EST
+            var estOptions = { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false };
+            var estTime = now.toLocaleString('en-US', estOptions);
+            var estParts = estTime.split(':');
+            var estHour = parseInt(estParts[0]);
+            var estMin = parseInt(estParts[1]);
+
+            // Get EST date for holiday check
+            var estDateStr = now.toLocaleString('en-CA', { timeZone: 'America/New_York' }).split(',')[0];
+
+            // Get day of week in EST
+            var estDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay();
+
+            // Weekend check (0 = Sunday, 6 = Saturday)
+            if (estDay === 0 || estDay === 6) {
+                return { open: false, reason: 'Weekend' };
+            }
+
+            // Holiday check
+            if (marketHolidays.indexOf(estDateStr) !== -1) {
+                return { open: false, reason: 'Holiday' };
+            }
+
+            // Market hours: 9:30 AM - 4:00 PM EST
+            var marketOpenMin = 9 * 60 + 30;  // 9:30 AM
+            var marketCloseMin = 16 * 60;      // 4:00 PM
+            var currentMin = estHour * 60 + estMin;
+
+            if (currentMin < marketOpenMin) {
+                return { open: false, reason: 'Pre-Market' };
+            } else if (currentMin >= marketCloseMin) {
+                return { open: false, reason: 'After Hours' };
+            }
+
+            return { open: true, reason: 'Open' };
+        }
+
+        function updateClock() {
+            var now = new Date();
+            document.getElementById('clock').textContent = now.toLocaleTimeString();
+
+            // Update market status
+            var status = isMarketOpen();
+            var statusEl = document.getElementById('marketStatus');
+            if (status.open) {
+                statusEl.className = 'market-status open';
+                statusEl.textContent = 'Market Open';
+            } else {
+                statusEl.className = 'market-status closed';
+                statusEl.textContent = 'Market Closed - ' + status.reason;
+            }
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function fetchPortfolio() {
+            log('Fetching...');
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', SERVER + '/portfolio', true);
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        log('OK');
+                        var data = JSON.parse(xhr.responseText);
+                        renderPortfolio(data);
+                        document.getElementById('update').textContent = data.last_update || '--';
+                    } else {
+                        log('Error: ' + xhr.status);
+                    }
+                }
+            };
+            xhr.onerror = function() {
+                log('Connection failed');
+            };
+            xhr.send();
+
+            var xhr2 = new XMLHttpRequest();
+            xhr2.open('GET', SERVER + '/chart', true);
+            xhr2.onreadystatechange = function() {
+                if (xhr2.readyState === 4 && xhr2.status === 200) {
+                    chartData = JSON.parse(xhr2.responseText);
+                    if (currentPage === 1) renderChart(chartData);
+                }
+            };
+            xhr2.send();
+        }
+
+        function renderPortfolio(data) {
+            var sign = data.total_day_gain_dollars >= 0 ? '+' : '';
+            var cls = data.total_day_gain_dollars >= 0 ? 'pos' : 'neg';
+            document.getElementById('totalValue').textContent = '$' + data.total_market_value.toLocaleString();
+            document.getElementById('dayChange').className = 'change ' + cls;
+            document.getElementById('dayChange').textContent = sign + '$' + data.total_day_gain_dollars.toFixed(2) + ' (' + sign + data.total_day_gain_percent.toFixed(2) + '%)';
+
+            var html = '<div class="row header"><div>Symbol</div><div class="right">Value</div><div class="right">Day</div><div class="right">Total</div></div>';
+            for (var i = 0; i < data.positions.length; i++) {
+                var p = data.positions[i];
+                var dc = p.day_gain_dollars >= 0 ? 'pos' : 'neg';
+                var tc = p.total_gain_dollars >= 0 ? 'pos' : 'neg';
+                var ds = p.day_gain_dollars >= 0 ? '+' : '';
+                var ts = p.total_gain_dollars >= 0 ? '+' : '';
+                var dayDollar = Math.abs(p.day_gain_dollars) >= 1000 ? (p.day_gain_dollars/1000).toFixed(1) + 'k' : p.day_gain_dollars.toFixed(0);
+                var totalDollar = Math.abs(p.total_gain_dollars) >= 1000 ? (p.total_gain_dollars/1000).toFixed(1) + 'k' : p.total_gain_dollars.toFixed(0);
+                html += '<div class="row"><div><div class="symbol">' + p.symbol + '</div><div class="shares">' + p.shares + '@$' + p.cost_per_share + '</div></div><div class="right">$' + (p.market_value/1000).toFixed(1) + 'k</div><div class="right ' + dc + '">' + ds + p.day_gain_percent.toFixed(1) + '%<br>' + ds + '$' + dayDollar + '</div><div class="right ' + tc + '">' + ts + p.total_gain_percent.toFixed(1) + '%<br>' + ts + '$' + totalDollar + '</div></div>';
+            }
+            html += '<div class="row" style="border-top:2px solid #2a2a2a;margin-top:5px;padding-top:10px;"><div><div class="symbol">SWVXX</div><div class="shares">Money Mkt</div></div><div class="right">$' + (data.money_market/1000).toFixed(1) + 'k</div><div class="right">--</div><div class="right">--</div></div>';
+            html += '<div class="row"><div class="symbol">Cash</div><div class="right">$' + (data.cash/1000).toFixed(1) + 'k</div><div class="right">--</div><div class="right">--</div></div>';
+            document.getElementById('holdingsList').innerHTML = html;
+        }
+
+        // Timezone helpers - convert market hours (EST) to user's local time
+        function getTimezoneOffset() {
+            // Get offset from EST (UTC-5) in hours
+            // User's offset from UTC in minutes (negative = west of UTC)
+            var userOffsetMin = new Date().getTimezoneOffset();
+            // EST is UTC-5 = 300 minutes
+            var estOffsetMin = 300;
+            // Difference: positive = user is ahead of EST
+            return (estOffsetMin - userOffsetMin) / 60;
+        }
+
+        function formatTime(hour, min) {
+            var ampm = hour >= 12 ? 'p' : 'a';
+            var h = hour > 12 ? hour - 12 : (hour === 0 ? 12 : hour);
+            return h + ':' + (min < 10 ? '0' : '') + min + ampm;
+        }
+
+        function getLocalMarketTimeLabels() {
+            // Market hours: 9:30 AM - 4:00 PM EST
+            var offset = getTimezoneOffset();
+            var labels = [];
+            // 6 labels spread across market hours (9:30, 11:00, 12:30, 2:00, 3:30, 4:00 EST)
+            var estTimes = [
+                {h: 9, m: 30},
+                {h: 11, m: 0},
+                {h: 12, m: 30},
+                {h: 14, m: 0},
+                {h: 15, m: 30},
+                {h: 16, m: 0}
+            ];
+            for (var i = 0; i < estTimes.length; i++) {
+                var localH = estTimes[i].h + offset;
+                if (localH < 0) localH += 24;
+                if (localH >= 24) localH -= 24;
+                labels.push(formatTime(localH, estTimes[i].m));
+            }
+            return labels;
+        }
+
+        function getLocalTimeForIndex(idx, total) {
+            // Market is 9:30 AM - 4:00 PM EST = 6.5 hours = 390 min
+            var offset = getTimezoneOffset();
+            var minFromStart = (idx / (total - 1)) * 390;
+            var estH = 9 + Math.floor((30 + minFromStart) / 60);
+            var estM = Math.floor((30 + minFromStart) % 60);
+            var localH = estH + offset;
+            if (localH < 0) localH += 24;
+            if (localH >= 24) localH -= 24;
+            return formatTime(localH, estM);
+        }
+
+        // Chart state for touch interaction
+        var chartState = {
+            values: [],
+            labels: [],
+            minVal: 0,
+            maxVal: 0,
+            range: 0,
+            prevClose: 0,
+            padding: 50,
+            color: '#22c55e',
+            fillColor: 'rgba(34,197,94,0.15)',
+            scrubIndex: -1
+        };
+
+        function renderChart(data) {
+            if (!data || !data.points || data.points.length === 0) {
+                log('No chart data');
+                return;
+            }
+            chartState.values = [];
+            chartState.labels = [];
+            for (var i = 0; i < data.points.length; i++) {
+                chartState.values.push(data.points[i].value);
+                chartState.labels.push(data.points[i].time);
+            }
+            chartState.prevClose = data.previous_close;
+            var curr = chartState.values[chartState.values.length - 1];
+            var gain = curr - chartState.prevClose;
+            var pct = ((curr - chartState.prevClose) / chartState.prevClose) * 100;
+
+            document.getElementById('chartGain').className = 'val ' + (gain >= 0 ? 'pos' : 'neg');
+            document.getElementById('chartGain').textContent = (gain >= 0 ? '+' : '') + '$' + gain.toFixed(2);
+            document.getElementById('chartPct').className = 'pct ' + (gain >= 0 ? 'pos' : 'neg');
+            document.getElementById('chartPct').textContent = (gain >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+
+            chartState.minVal = Math.min.apply(null, chartState.values);
+            chartState.maxVal = Math.max.apply(null, chartState.values);
+            chartState.range = chartState.maxVal - chartState.minVal || 1;
+            chartState.minVal -= chartState.range * 0.1;
+            chartState.maxVal += chartState.range * 0.1;
+            chartState.range = chartState.maxVal - chartState.minVal;
+
+            chartState.color = gain >= 0 ? '#22c55e' : '#ef4444';
+            chartState.fillColor = gain >= 0 ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+            chartState.scrubIndex = -1;
+
+            drawChart();
+            setupChartTouch();
+            log('Chart rendered');
+        }
+
+        function drawChart(scrubIdx) {
+            var canvas = document.getElementById('dayChart');
+            var ctx = canvas.getContext('2d');
+            var w = canvas.width;
+            var h = canvas.height;
+            var padding = chartState.padding;
+            var values = chartState.values;
+
+            // Clear canvas
+            ctx.fillStyle = isLightMode ? '#f5f5f5' : '#0a0a0a';
+            ctx.fillRect(0, 0, w, h);
+
+            // Draw grid lines
+            ctx.strokeStyle = isLightMode ? '#ddd' : '#2a2a2a';
+            ctx.lineWidth = 1;
+            for (var i = 0; i <= 4; i++) {
+                var y = padding + (h - padding * 2) * i / 4;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(w - padding, y);
+                ctx.stroke();
+            }
+
+            // Draw Y axis labels
+            ctx.fillStyle = isLightMode ? '#666' : '#888';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'right';
+            for (var i = 0; i <= 4; i++) {
+                var y = padding + (h - padding * 2) * i / 4;
+                var val = chartState.maxVal - (chartState.range * i / 4);
+                ctx.fillText('$' + (val/1000).toFixed(0) + 'k', padding - 8, y + 4);
+            }
+
+            // Draw filled area
+            ctx.beginPath();
+            ctx.moveTo(padding, h - padding);
+            for (var i = 0; i < values.length; i++) {
+                var x = padding + (w - padding * 2) * i / (values.length - 1);
+                var y = padding + (h - padding * 2) * (1 - (values[i] - chartState.minVal) / chartState.range);
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(w - padding, h - padding);
+            ctx.closePath();
+            ctx.fillStyle = chartState.fillColor;
+            ctx.fill();
+
+            // Draw line
+            ctx.beginPath();
+            for (var i = 0; i < values.length; i++) {
+                var x = padding + (w - padding * 2) * i / (values.length - 1);
+                var y = padding + (h - padding * 2) * (1 - (values[i] - chartState.minVal) / chartState.range);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = chartState.color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw X axis labels - market hours in user's local timezone
+            // Market hours: 9:30 AM - 4:00 PM EST (UTC-5)
+            ctx.fillStyle = isLightMode ? '#666' : '#888';
+            ctx.textAlign = 'center';
+            var timeLabels = getLocalMarketTimeLabels();
+            for (var i = 0; i < timeLabels.length; i++) {
+                var x = padding + (w - padding * 2) * i / (timeLabels.length - 1);
+                ctx.fillText(timeLabels[i], x, h - padding + 20);
+            }
+
+            // Draw scrub indicator if active
+            if (typeof scrubIdx === 'number' && scrubIdx >= 0 && scrubIdx < values.length) {
+                var scrubX = padding + (w - padding * 2) * scrubIdx / (values.length - 1);
+                var scrubY = padding + (h - padding * 2) * (1 - (values[scrubIdx] - chartState.minVal) / chartState.range);
+                var scrubVal = values[scrubIdx];
+                var scrubGain = scrubVal - chartState.prevClose;
+                var scrubPct = ((scrubVal - chartState.prevClose) / chartState.prevClose) * 100;
+
+                // Vertical line
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(scrubX, padding);
+                ctx.lineTo(scrubX, h - padding);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Dot on line
+                ctx.beginPath();
+                ctx.arc(scrubX, scrubY, 6, 0, Math.PI * 2);
+                ctx.fillStyle = chartState.color;
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Value tooltip
+                var tooltipText = '$' + (scrubVal/1000).toFixed(1) + 'k';
+                var gainText = (scrubGain >= 0 ? '+' : '') + '$' + scrubGain.toFixed(0) + ' (' + (scrubGain >= 0 ? '+' : '') + scrubPct.toFixed(1) + '%)';
+
+                // Calculate time for this index in user's local timezone
+                var timeText = getLocalTimeForIndex(scrubIdx, values.length);
+
+                ctx.font = 'bold 14px sans-serif';
+                ctx.fillStyle = isLightMode ? '#1a1a1a' : '#fff';
+                ctx.textAlign = 'center';
+                ctx.fillText(tooltipText, scrubX, scrubY - 35);
+                ctx.font = '12px sans-serif';
+                ctx.fillStyle = scrubGain >= 0 ? '#22c55e' : '#ef4444';
+                ctx.fillText(gainText, scrubX, scrubY - 20);
+                ctx.fillStyle = isLightMode ? '#666' : '#888';
+                ctx.fillText(timeText, scrubX, h - padding + 35);
+            }
+        }
+
+        var chartTouchSetup = false;
+        function setupChartTouch() {
+            if (chartTouchSetup) return;
+            chartTouchSetup = true;
+            var canvas = document.getElementById('dayChart');
+            var padding = chartState.padding;
+
+            function handleTouch(e) {
+                if (currentPage !== 1) return;
+                var rect = canvas.getBoundingClientRect();
+                var x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+                var scaleX = canvas.width / rect.width;
+                x *= scaleX;
+
+                var chartWidth = canvas.width - padding * 2;
+                x = Math.max(padding, Math.min(canvas.width - padding, x));
+                var ratio = (x - padding) / chartWidth;
+                var idx = Math.round(ratio * (chartState.values.length - 1));
+                idx = Math.max(0, Math.min(chartState.values.length - 1, idx));
+
+                chartState.scrubIndex = idx;
+                drawChart(idx);
+                e.preventDefault();
+            }
+
+            function handleEnd() {
+                chartState.scrubIndex = -1;
+                drawChart();
+            }
+
+            canvas.addEventListener('touchstart', handleTouch, {passive: false});
+            canvas.addEventListener('touchmove', handleTouch, {passive: false});
+            canvas.addEventListener('touchend', handleEnd, {passive: false});
+            canvas.addEventListener('mousedown', handleTouch);
+            canvas.addEventListener('mousemove', function(e) { if (e.buttons) handleTouch(e); });
+            canvas.addEventListener('mouseup', handleEnd);
+            canvas.addEventListener('mouseleave', handleEnd);
+        }
+
+        log('Init...');
+        fetchPortfolio();
+        setInterval(fetchPortfolio, 600000);
+    </script>
+</body>
+</html>
